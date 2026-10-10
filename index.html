@@ -354,6 +354,28 @@ summary::marker { color: var(--accent); }
     การนำเข้าเป็นการเพิ่มข้อมูล หากนำเข้าไฟล์เดิมซ้ำจะได้ข้อมูลซ้ำ
   </p>
 </section>
+
+<section class="card">
+  <h2>10. ใช้ข้อมูลร่วมกันหลายเครื่อง</h2>
+  <p class="muted">
+    เครื่องที่มีข้อมูลอยู่ให้กด "แสดงรหัสเข้าถึง" แล้วนำรหัสไปกรอกในเครื่องอื่น
+    ทุกเครื่องจะเห็นและแก้ข้อมูลชุดเดียวกัน ผู้ที่มีรหัสเข้าถึงข้อมูลทั้งหมดได้ จึงควรเก็บเป็นความลับ
+  </p>
+  <div class="actions">
+    <button id="showCode" type="button">แสดงรหัสเข้าถึง</button>
+    <button id="copyCode" type="button" hidden>คัดลอกรหัส</button>
+  </div>
+  <label>รหัสเข้าถึงของชุดข้อมูลนี้
+    <input id="shareCode" readonly placeholder="กดแสดงรหัสเข้าถึง" autocomplete="off">
+  </label>
+  <label>กรอกรหัสจากเครื่องอื่น
+    <input id="joinCode" maxlength="24" placeholder="เช่น ABCD-EFGH-JKMN-PQRS"
+      autocomplete="off" autocapitalize="characters" spellcheck="false">
+  </label>
+  <div class="actions">
+    <button id="joinButton" class="primary" type="button">ใช้ข้อมูลชุดนี้ในเครื่องนี้</button>
+  </div>
+</section>
 </fieldset>
 </main>
 
@@ -1122,6 +1144,43 @@ $("importFile").onchange = () => {
   });
 };
 
+function groupCode(code) {
+  return code.match(/.{1,4}/g).join("-");
+}
+
+$("showCode").onclick = () => task(async () => {
+  const code = checked(await db.rpc("get_or_create_share_code"));
+  $("shareCode").value = groupCode(code);
+  $("copyCode").hidden = false;
+  return "แสดงรหัสเข้าถึงแล้ว ส่งให้เฉพาะเครื่องของคุณเอง";
+});
+
+$("copyCode").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("shareCode").value);
+    status("คัดลอกรหัสแล้ว");
+  } catch {
+    $("shareCode").select();
+    status("คัดลอกอัตโนมัติไม่ได้ กรุณาแตะค้างที่ช่องรหัสแล้วเลือกคัดลอก", true);
+  }
+};
+
+$("joinButton").onclick = () => task(async () => {
+  const code = $("joinCode").value.trim();
+  if (!code) throw new Error("กรุณากรอกรหัสเข้าถึงก่อน");
+  if (!confirm(
+    "เครื่องนี้จะเปลี่ยนไปใช้ข้อมูลของชุดที่ตรงกับรหัส " +
+    "ข้อมูลเดิมในเครื่องนี้จะไม่ถูกลบ แต่จะไม่แสดงอีก ต้องการดำเนินการต่อหรือไม่?"
+  )) return "ยกเลิกแล้ว";
+  owner = checked(await db.rpc("join_with_code", { p_code: code }));
+  selected = "";
+  $("joinCode").value = "";
+  $("shareCode").value = "";
+  $("copyCode").hidden = true;
+  await reload();
+  return "เชื่อมข้อมูลสำเร็จ เครื่องนี้ใช้ข้อมูลชุดเดียวกับเครื่องที่ให้รหัสแล้ว";
+});
+
 async function start() {
   $("retry").hidden = true;
   $("workspace").disabled = true;
@@ -1154,7 +1213,8 @@ async function start() {
     }
 
     if (!session?.user?.id) throw new Error("ไม่สามารถสร้างสิทธิ์เข้าถึงข้อมูลได้");
-    owner = session.user.id;
+    // ถ้าเครื่องนี้ผูกกับรหัสเข้าถึงไว้ จะได้รหัสเจ้าของชุดข้อมูลเดิมกลับมา
+    owner = checked(await db.rpc("get_owner")) || session.user.id;
     await reload();
 
     ready = true;
